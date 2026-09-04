@@ -23,8 +23,8 @@ Serve first: `python3 -m http.server 8000` → open `http://localhost:8000` (or 
 - **Expect:** `initial human` appears in log; header `HUMAN REPOSITORY — ⎇ main`; count `1 commit`.
 - **Do:** raise right hand sharply, hold.
 - **Expect:** within ~1 s a commit `feat: raise right hand`; status second line narrates it, e.g. `live: rightWrist y↑0.38 (v↑2.4)` with arrows matching the real direction.
-- **Do:** lower the hand, turn head, crouch/stand (if standing).
-- **Expect:** `feat: lower right hand`, `feat: turn head`, `feat: crouch` / `feat: stand` — labels matching motion. Sitting still produces nothing (`(cooldown)` may flash; never spam).
+- **Do:** lower the hand, turn head fully left/right, nod, crouch/stand (if standing).
+- **Expect:** `feat: lower right hand`, `feat: turn head`, `feat: nod down`, `feat: crouch` / `feat: stand` — labels matching motion (head rotations are sensitivity-boosted since the nose barely translates; small glances stay silent by design). Sitting still produces nothing (`(cooldown)` may flash; never spam).
 - **Do:** drag threshold to `0.35`, wave normally.
 - **Expect:** (almost) no commits. Drag to `0.10`, sway.
 - **Expect:** commits fire easily. Return to `0.18`.

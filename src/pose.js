@@ -229,6 +229,12 @@ export function smoothPose(prev, next, alpha = 0.3) {
 // one-arm moves while sway (mean 0.03, max 0.06 → 0.05) stays silent at 0.18.
 // Depth (z) carries half weight — MediaPipe documents it as far less accurate
 // than x/y, and full weight lets depth noise fake motion.
+// Head carries HEAD_WEIGHT: turns/nods rotate the skull, so the nose landmark
+// only translates ~0.1–0.15 torso units where a hand raise moves 0.6 —
+// unweighted, head-only motion could never reach threshold. Direction vectors
+// stay raw (only magnitudes scale), and diff/merge use diffPoses, so this
+// touches commit triggering alone.
+const HEAD_WEIGHT = 2.5;
 export function poseDelta(a, b) {
   let sum = 0, n = 0;
   let maxName = null, maxDist = -1, maxVec = null;
@@ -238,7 +244,8 @@ export function poseDelta(a, b) {
     if (k === 'hip') continue; // always zero
     const pa = a[k], pb = b[k];
     if (!pa || !pb) continue;
-    const d = Math.hypot(pb.x - pa.x, pb.y - pa.y, 0.5 * (pb.z - pa.z));
+    const raw = Math.hypot(pb.x - pa.x, pb.y - pa.y, 0.5 * (pb.z - pa.z));
+    const d = k === 'head' ? raw * HEAD_WEIGHT : raw;
     perJoint[k] = d;
     sum += d; n++;
     if (d > maxDist) { second = maxDist; maxDist = d; maxName = k; maxVec = sub(pb, pa); }
