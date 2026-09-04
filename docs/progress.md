@@ -35,24 +35,32 @@ Everything runs client-side in one browser tab. No backend. Libraries (Three.js,
 - `diff [--text] [<a> [<b>]]` — no args: HEAD vs parent; one: commit vs its parent; two: A vs B. Text report (`+ RIGHT_HAND moved upward (0.42)`, unchanged count, identical-pose case) avoids left/right words (mirror-ambiguous by design) in favor of upward/downward/sideways + magnitude.
 - Visual diff: both snapshots render as stage ghosts (green = A, amber = B) beside live tracking until `clear`, `checkout`, or STOP. `--text` skips the overlay.
 
-### 5. Command reference (`git` prefix optional everywhere)
-- `log` — history with HEAD marker + branch tags (read-only, re-renders).
+### 5. Merge + conflicts (Hours 11–14)
+- `merge <branch>`: up-to-date (same tip / already inside), fast-forward (ref jump, no commit), clean auto-merge (all joints within 0.15), or conflicts.
+- Conflicts list disagreeing joints (`1. RIGHT_HAND: main UP vs dance DOWN (Δ0.95)`, vertical words only) with both poses overlaid (green = current, amber = incoming). Resolve via `keep`/`take`/`resolve <n|joint> [ours|theirs]` (numbers or names, re-resolvable); last resolution auto-creates the merge commit (two parents, scene mixed joint-wise so it stays check-out-able). `merge --abort` bails clean.
+- Frozen mid-merge (commits, checkout, new merges block with hints); `diff` stays read-only; `status`/HUD show the merge state. Ancestry walks both parents so later merges resolve correctly.
+
+### 6. Command reference (`git` prefix optional everywhere)
+- `log` — HEAD-lineage history with HEAD marker, branch tags, time-ago. `graph` — all branches newest-first with merge edges (`╮+hash`).
 - `checkout <hash|branch>` — time-travel / resume live.
-- `diff [--text] [<a> [<b>]]` — compare poses, text + overlay.
-- `branch [<name>]` — list / fork.
-- `status` — branch/detached state, commit count, HEAD message.
+- `diff [--text] [<a> [<b>]]` — a/b are hashes or branch names; text + green/amber overlay.
+- `branch [<name>]` — list (with tip hashes) / fork; `branch -d <name>` deletes (checked-out branch and `main` protected).
+- `merge <branch>` — fast-forward / clean auto-merge / visual conflicts (`keep`/`take`/`resolve`, `merge --abort`).
+- `stash [-m "msg"]` — park current pose; `stash pop` previews then resumes live; `stash list`/`drop`.
+- `status` — branch/detached state, count, HEAD message, merge + stash lines.
 - `commit [-m "msg"]` — force-commit current pose now.
 - `clear` — re-render log + wipe overlay (a shell-ism, not Git; commits untouched).
 - `help` — one-line command list.
 
-### 6. UI rework
+### 7. UI rework
 - Topbar (brand, `⎇ main` / detached badge, status pill, commit count, START/STOP), left column (webcam source + status console + motion trigger + framing tips), center 3D stage (floating HUD + mode banner), right repository terminal (scrollable log, `$` input, quick chips: log / checkout / diff / status / commit / clear / help), footer shortcuts.
 - Green-on-black terminal theme, responsive (3-column → 2-column → stacked, stage first on mobile). Preview stays mirrored. CDN preconnects + dark color-scheme for load polish.
 
-### 7. Performance pass
+### 8. Performance pass (+ audit)
 - Render: same-frame input skip (camera 30 fps vs 60 Hz display ≈ half the avatar math eliminated), single `drawLive()` path, cheaper GL context (`high-performance`, no stencil), lighter geometries, static grid skips matrix updates.
-- Commit pipeline + its DOM writes throttled 60 Hz → ~10 Hz (filter math uses real timestamps, so behavior identical; settle counts adjusted to preserve feel).
+- Commit pipeline throttled 60 Hz → ~10 Hz (filter math uses real timestamps, so behavior identical; settle counts adjusted to preserve feel). Meter DOM writes are change-detected — parked/throttled values skip layout recalc entirely.
 - Adaptive detect stride: inference > 40 ms averages → every 2nd video frame (render smoothing covers the gap), recovers below 18 ms, shown live as `detect=45.2ms/2f`.
+- Audit: all git/merge/diff walks capped (500/200/50/30), fixed-size filter state, textContent-only DOM (no injection surface), every import used, frozen-state guards verified (detach/merge/stop), stash-pop edge without snapshot now reports honestly.
 
 ## Repo layout
 
@@ -75,10 +83,11 @@ python3 -m http.server 8000
 # open http://localhost:8000 → START → hold still → move
 ```
 
-Confirm health: hold still → `initial human`; raise hand → one commit with a matching label + `live:` debug line; sit still → no spam; `diff` → text + green/amber ghosts; `branch dance` → pose → commits land on `dance`; `checkout <first-hash>` → amber time-travel; `checkout main` → green live resumes.
+Confirm health: hold still → `initial human`; raise hand → one commit with a matching label + `live:` debug line; sit still → no spam and meter DOM goes quiet; `diff` → text + green/amber ghosts; `branch dance` → pose → commits land on `dance`; `checkout <first-hash>` → amber time-travel; `checkout main` → green live resumes; `stash` → `stash pop` previews then resumes.
 
 ## What's next (per the 18h plan)
 
-- **Hours 11–14:** `merge <branch>` with per-joint tolerance + visual conflict resolution (`KEEP CURRENT` / `TAKE INCOMING`) — the demo finale.
-- **Hours 14–16:** polish — Git-graph viz, `stash`/`stash pop`, rich log rows.
-- **Hours 16–18:** demo lockdown — threshold tuning on real lighting, rehearsed 90-second script, fallbacks (pre-recorded clip, cut merge, text-only diff).
+Plan core is complete (pipeline → commits → checkout → diff/branch → merge). Remaining:
+
+- **Polish (done this round):** `stash`/`pop`/`list`/`drop`, `graph` view, rich log rows (time-ago, tip tags, merge edges), `branch -d`, diff by branch name.
+- **Hours 16–18: demo lockdown** — no new features: threshold tuning on real lighting, full demo rehearsal, fallback clip, console-error sweep.

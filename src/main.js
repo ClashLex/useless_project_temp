@@ -1,7 +1,7 @@
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 import { createAvatar } from './avatar.js';
 import { COMMIT_JOINTS, toNormalizedPose, toNormalizedPoseWorld, poseDelta, clonePose, poseQuality, visMap, hiddenSides } from './pose.js';
-import { createRepo, commitPose, headCommit, history, checkoutBranch, checkoutHash, isDetached, lookupCommit, createBranch } from './git.js';
+import { createRepo, commitPose, headCommit, history, checkoutBranch, checkoutHash, isDetached, createBranch, stashPush, stashPop, stashDrop, deleteBranch, resolveRef } from './git.js';
 import { describeMovement, movementDebug } from './messages.js';
 import { diffPoses, formatDiff } from './diff.js';
 import { analyzeMerge, finalizeMerge } from './merge.js';
@@ -68,24 +68,72 @@ function setStatus(mode, msg) {
   dot.className = mode;
 }
 
+function ago(ts) {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 10) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
+}
+
+function tipTags(hash) {
+  const tags = [];
+  for (const [b, hh] of repo.branches) {
+    if (hh === hash) tags.push(`[${b}]`);
+  }
+  return tags.length ? ' ' + tags.join(' ') : '';
+}
+
+function headLabel() {
+  return repo.HEAD.hash
+    ? (isDetached(repo) ? `detached @ ${repo.HEAD.hash}` : `⎇ ${repo.HEAD.branch}`)
+    : '⎇ main (empty)';
+}
+
 function renderLog() {
   const h = history(repo, 30);
   commitCount.textContent = `${repo.commits.size} commit${repo.commits.size === 1 ? '' : 's'}`;
-  const head = repo.HEAD.hash
-    ? (isDetached(repo) ? `detached @ ${repo.HEAD.hash}` : `⎇ ${repo.HEAD.branch}`)
-    : '⎇ main (empty)';
+  const head = headLabel();
   if (!h.length) {
     logEl.textContent = `HUMAN REPOSITORY — ${head}\n(no commits yet — stand in frame)`;
     return;
   }
-  const lines = h.map((c) => {
-    const tags = [];
-    for (const [b, hh] of repo.branches) {
-      if (hh === c.hash) tags.push(`[${b}]`);
-    }
-    return `${c.hash === repo.HEAD.hash ? '*' : ' '} ${c.hash}${tags.length ? ' ' + tags.join(' ') : ''}  ${c.message}`;
-  });
+  const lines = h.map((c) =>
+    `${c.hash === repo.HEAD.hash ? '*' : ' '} ${c.hash}${tipTags(c.hash)}  ${c.message} (${ago(c.timestamp)})`
+  );
   logEl.textContent = `HUMAN REPOSITORY — ${head}\n\n` + lines.join('\n');
+  logEl.scrollTop = 0;
+}
+
+// All branches at once, newest first, with merge edges —
+// `git log --graph --all --decorate` for bodies. `log` stays HEAD-lineage.
+function graphLog() {
+  const seen = new Map();
+  const stack = [];
+  if (repo.HEAD.hash) stack.push(repo.HEAD.hash);
+  for (const h of repo.branches.values()) if (h) stack.push(h);
+  let guard = 0;
+  while (stack.length && guard++ < 500) {
+    const h = stack.pop();
+    if (!h || seen.has(h)) continue;
+    const c = repo.commits.get(h);
+    if (!c) continue;
+    seen.set(h, c);
+    if (c.parent) stack.push(c.parent);
+    if (c.secondParent) stack.push(c.secondParent);
+  }
+  const all = [...seen.values()].sort((a, b) => b.timestamp - a.timestamp).slice(0, 30);
+  const head = headLabel();
+  if (!all.length) {
+    logEl.textContent = `HUMAN GRAPH — ${head}\n(no commits yet — stand in frame)`;
+    return;
+  }
+  const lines = all.map((c) =>
+    `${c.hash === repo.HEAD.hash ? '*' : 'o'} ${c.hash}${tipTags(c.hash)}  ${c.message} (${ago(c.timestamp)})` +
+    (c.secondParent ? ` ╮+${c.secondParent.slice(0, 4)}` : '')
+  );
+  logEl.textContent = `HUMAN GRAPH — ${head}\n\n` + lines.join('\n');
   logEl.scrollTop = 0;
 }
 
@@ -125,12 +173,18 @@ function doCommit(pose, forcedMsg) {
   return c;
 }
 
+// Change-detected DOM writes: identical values (e.g. parked 0s while
+// detached, or a held still pose) skip layout/style recalc entirely.
+let lastDeltaText = null, lastDeltaWidth = null, lastDeltaColor = null;
 function updateDeltaUI(mean, score) {
   lastDeltaMean = mean;
   lastScore = score ?? mean;
-  deltaVal.textContent = lastScore.toFixed(3);
-  deltaBar.style.width = `${Math.min(100, (lastScore / (threshold * 1.5)) * 100).toFixed(0)}%`;
-  deltaBar.style.background = lastScore > threshold ? '#00ff66' : '#0a5c2a';
+  const text = lastScore.toFixed(3);
+  const width = `${Math.min(100, (lastScore / (threshold * 1.5)) * 100).toFixed(0)}%`;
+  const color = lastScore > threshold ? '#00ff66' : '#0a5c2a';
+  if (text !== lastDeltaText) { deltaVal.textContent = text; lastDeltaText = text; }
+  if (width !== lastDeltaWidth) { deltaBar.style.width = width; lastDeltaWidth = width; }
+  if (color !== lastDeltaColor) { deltaBar.style.background = color; lastDeltaColor = color; }
 }
 
 thresh.oninput = () => {
@@ -186,7 +240,8 @@ function doStatus() {
   appendLog(
     `$ status: ${isDetached(repo) ? `detached @ ${repo.HEAD.hash}` : `on branch ${repo.HEAD.branch}`} · ` +
     `${n} commit${n === 1 ? '' : 's'}` +
-    (head ? ` · HEAD "${head.message}"` : ' · no commits yet') + mergeLine
+    (head ? ` · HEAD "${head.message}"` : ' · no commits yet') + mergeLine +
+    (repo.stash ? `\n$ stash: "${repo.stash.message}" (${ago(repo.stash.timestamp)})` : '')
   );
 }
 
@@ -308,14 +363,49 @@ function doBranch(name) {
   appendLog(`$ branched '${name}' @ ${repo.HEAD.hash} — checkout ${name} to move on it`);
 }
 
-// diff [--text] [<hashA> [<hashB>]] — no args: HEAD vs parent;
-// one arg: that commit vs its parent; two args: A vs B. Text always prints;
+function doBranchDelete(name) {
+  const r = deleteBranch(repo, name);
+  if (!r.ok) { appendLog('$ ' + r.error); return; }
+  renderLog();
+  appendLog(`$ deleted branch '${name}'`);
+}
+
+function doStashPush(msg) {
+  if (isDetached(repo)) { appendLog(`$ can't stash while time-traveling — checkout ${repo.HEAD.branch} first`); return; }
+  if (pendingMerge) { appendLog(`$ can't stash mid-merge — resolve '${pendingMerge.target}' or merge --abort`); return; }
+  if (!commitSmooth) { appendLog('$ nothing to stash — no tracked pose yet'); return; }
+  const scene = avatar.getScene();
+  const r = stashPush(repo, clonePose(commitSmooth), scene, msg);
+  if (!r.ok) { appendLog('$ ' + r.error); return; }
+  appendLog(`$ stashed "${r.stash.message}" — pop to preview it`);
+}
+
+function doStashPop() {
+  if (isDetached(repo)) { appendLog(`$ can't pop while time-traveling — checkout ${repo.HEAD.branch} first`); return; }
+  if (pendingMerge) { appendLog(`$ can't pop mid-merge — resolve '${pendingMerge.target}' or merge --abort`); return; }
+  const r = stashPop(repo);
+  if (!r.ok) { appendLog('$ ' + r.error); return; }
+  if (!r.stash.scene) { appendLog(`$ popped "${r.stash.message}" (no preview snapshot)`); return; }
+  appendLog(`$ popped "${r.stash.message}" — previewing, live resumes`);
+  avatar.playTo(r.stash.scene, 600);
+  setTimeout(() => {
+    if (running && !isDetached(repo) && !pendingMerge && avatar.isPlayback()) avatar.resumeLive();
+  }, 1600);
+}
+
+function doStashList() {
+  if (!repo.stash) { appendLog('$ stash: empty'); return; }
+  appendLog(`$ stash: "${repo.stash.message}" (${ago(repo.stash.timestamp)})`);
+}
+
+// diff [--text] [<a> [<b>]] — a/b are hashes OR branch names. No args: HEAD
+// vs parent; one arg: that ref vs its parent; two args: A vs B.
 // the stage overlay (green=A, amber=B) shows too unless --text.
 function doDiff(argStr) {
   const tokens = argStr.trim().split(/\s+/).filter(Boolean);
   const textOnly = tokens.includes('--text');
   const hashes = tokens.filter((t) => !t.startsWith('--'));
-  if (hashes.length > 2) { appendLog('$ usage: diff [--text] [<hashA> [<hashB>]]'); return; }
+  if (hashes.length > 2) { appendLog('$ usage: diff [--text] [<a> [<b>]]  (hash or branch)'); return; }
   let a, b;
   if (hashes.length === 0) {
     const head = headCommit(repo);
@@ -326,7 +416,7 @@ function doDiff(argStr) {
     b = head;
     a = repo.commits.get(head.parent);
   } else if (hashes.length === 1) {
-    const rb = lookupCommit(repo, hashes[0]);
+    const rb = resolveRef(repo, hashes[0]);
     if (!rb.ok) { appendLog('$ ' + rb.error); return; }
     b = rb.commit;
     if (!b.parent || !repo.commits.get(b.parent)) {
@@ -334,9 +424,9 @@ function doDiff(argStr) {
     }
     a = repo.commits.get(b.parent);
   } else {
-    const ra = lookupCommit(repo, hashes[0]);
+    const ra = resolveRef(repo, hashes[0]);
     if (!ra.ok) { appendLog('$ ' + ra.error); return; }
-    const rb = lookupCommit(repo, hashes[1]);
+    const rb = resolveRef(repo, hashes[1]);
     if (!rb.ok) { appendLog('$ ' + rb.error); return; }
     a = ra.commit;
     b = rb.commit;
@@ -392,10 +482,32 @@ cmdEl.addEventListener('keydown', (e) => {
     if (!arg) {
       const names = [...repo.branches.keys()].map((b) => `${b === repo.HEAD.branch && !isDetached(repo) ? '*' : ' '} ${b}@${repo.branches.get(b) || '(empty)'}`).join('\n');
       appendLog('$ branches:\n' + names);
+    } else if (arg === '-d' || arg.startsWith('-d ')) {
+      const name = arg.slice(2).trim();
+      if (!name || /\s/.test(name)) appendLog('$ usage: branch -d <name>');
+      else doBranchDelete(name);
     } else if (/\s/.test(arg)) {
-      appendLog('$ usage: branch <name>');
+      appendLog('$ usage: branch <name> | branch -d <name>');
     } else {
       doBranch(arg);
+    }
+    return;
+  }
+  if (raw === 'graph') { graphLog(); return; }
+  if (raw === 'stash' || raw.startsWith('stash ')) {
+    const rest = raw.slice('stash'.length).trim();
+    const pushM = rest.match(/^(?:push\s+)?-m\s+"([^"]+)"|^(?:push\s+)?-m\s+'([^']+)'|^(?:push\s+)?-m\s+(\S+)/);
+    if (!rest || rest === 'push' || pushM) {
+      doStashPush(pushM ? (pushM[1] || pushM[2] || pushM[3]) : undefined);
+    } else if (rest === 'pop') {
+      doStashPop();
+    } else if (rest === 'list') {
+      doStashList();
+    } else if (rest === 'drop') {
+      const r = stashDrop(repo);
+      appendLog(r.ok ? '$ stash dropped' : '$ ' + r.error);
+    } else {
+      appendLog('$ usage: stash [-m "msg"] | stash pop | stash list | stash drop');
     }
     return;
   }
@@ -405,7 +517,7 @@ cmdEl.addEventListener('keydown', (e) => {
   }
   if (raw === 'clear') { avatar.clearDiff(); renderLog(); return; }
   if (raw === 'help') {
-    appendLog('$ commands: log · checkout <hash|branch> · diff [--text] [<a> [<b>]] · branch [<name>] · merge <branch> · keep/take <n|joint> · status · commit [-m "msg"] · clear');
+    appendLog('$ commands: log · graph · checkout <hash|branch> · diff [--text] [<a> [<b>]] · branch [<name>|-d <name>] · merge <branch> · keep/take <n|joint> · stash [pop|list|drop] · status · commit [-m "msg"] · clear');
     return;
   }
   appendLog(`$ unknown: ${rawIn} (try: log)`);

@@ -11,6 +11,7 @@ export function createRepo() {
     commits: new Map(),
     branches: new Map([['main', null]]),
     HEAD: { branch: 'main', hash: null, detached: false },
+    stash: null, // single slot: {pose, scene, message, timestamp}
   };
 }
 
@@ -126,6 +127,22 @@ export function createBranch(repo, name) {
   return { ok: true };
 }
 
+// Delete a branch. Refuses the checked-out branch (real git does too) and
+// protects main — losing the trunk mid-demo ruins every later command.
+export function deleteBranch(repo, name) {
+  if (!repo.branches.has(name)) {
+    return { ok: false, error: `branch '${name}' not found. try: branch` };
+  }
+  if (name === repo.HEAD.branch && !repo.HEAD.detached) {
+    return { ok: false, error: `can't delete checked-out branch '${name}' — checkout another first` };
+  }
+  if (name === 'main') {
+    return { ok: false, error: `won't delete 'main' (demo safety)` };
+  }
+  repo.branches.delete(name);
+  return { ok: true };
+}
+
 // Checkout a branch by name: attach HEAD, resume live.
 export function checkoutBranch(repo, name) {
   if (!repo.branches.has(name)) {
@@ -133,6 +150,45 @@ export function checkoutBranch(repo, name) {
   }
   repo.HEAD = { branch: name, hash: repo.branches.get(name), detached: false };
   return { ok: true, commit: headCommit(repo) };
+}
+
+// Resolve a hash prefix OR branch name to a commit (for diff and friends).
+export function resolveRef(repo, token) {
+  if (repo.branches.has(token)) {
+    const h = repo.branches.get(token);
+    if (!h || !repo.commits.get(h)) {
+      return { ok: false, error: `branch '${token}' has no commits yet` };
+    }
+    return { ok: true, commit: repo.commits.get(h) };
+  }
+  return lookupCommit(repo, token);
+}
+
+// Stash: park the current pose without committing. Single slot per the
+// report's data model — push refuses while occupied, pop restores + clears.
+export function stashPush(repo, pose, scene, message) {
+  if (!pose) return { ok: false, error: 'nothing to stash — no tracked pose yet' };
+  if (repo.stash) return { ok: false, error: 'stash occupied — pop or drop it first' };
+  repo.stash = {
+    pose: clonePose(pose),
+    scene: scene ? clonePose(scene) : null,
+    message: message || 'stashed pose',
+    timestamp: Date.now(),
+  };
+  return { ok: true, stash: repo.stash };
+}
+
+export function stashPop(repo) {
+  if (!repo.stash) return { ok: false, error: 'nothing stashed — try: stash' };
+  const s = repo.stash;
+  repo.stash = null;
+  return { ok: true, stash: s };
+}
+
+export function stashDrop(repo) {
+  if (!repo.stash) return { ok: false, error: 'nothing stashed' };
+  repo.stash = null;
+  return { ok: true };
 }
 
 // Checkout a commit hash prefix: detach HEAD, freeze commits, play back pose.

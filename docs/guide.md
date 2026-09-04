@@ -46,15 +46,15 @@ Serve first: `python3 -m http.server 8000` → open `http://localhost:8000` (or 
 
 - **Do:** with 2+ commits, `diff`.
 - **Expect:** `HUMAN DIFFERENCE <a>..<b>` with `+ RIGHT_HAND moved upward (0.42)`-style lines, unchanged-joint count, plus green/amber overlay ghosts on stage with a legend line.
-- **Do:** `diff <hashA> <hashB>`, `diff <one-hash>`, `diff --text`.
-- **Expect:** correct pair compared; `--text` prints without touching the overlay.
+- **Do:** `diff <hashA> <hashB>`, `diff main dance`, `diff <one-hash>`, `diff --text`.
+- **Expect:** correct pair compared (hashes or branch names); `--text` prints without touching the overlay.
 - **Do:** `clear` / `checkout`.
 - **Expect:** overlay wiped.
 
 ## 5. Branch
 
 - **Do:** `branch` → `branch dance` → `branch` again.
-- **Expect:** list shows `* main@<hash>`; after create, log line for the tip gains `[dance]`, plus `branched 'dance' @ <hash>` hint. Re-creating `dance` → `already exists` error. `branch 'bad name!'` → invalid-name error.
+- **Expect:** list shows `* main@<hash>`; after create, log line for the tip gains `[dance]`, plus `branched 'dance' @ <hash>` hint. Re-creating `dance` → `already exists` error. `branch 'bad name!'` → invalid-name error. `branch -d dance` (while on main) → deleted; deleting the checked-out branch or `main` → refused with reason.
 - **Do:** `checkout dance` → strike a new pose → commit → `log`.
 - **Expect:** badge `⎇ dance`, new commit tagged `[dance]`; `checkout main` → `log` no longer shows it (independent histories).
 
@@ -89,8 +89,19 @@ Serve first: `python3 -m http.server 8000` → open `http://localhost:8000` (or 
 
 - **Do:** watch status `fps` + `detect=..ms` for 30 s while moving.
 - **Expect:** render fps near display rate; detect typically single-digit ms on GPU. On a weak machine, `detect=NNms/2f` appears (adaptive stride) instead of stutter; recovery when load drops.
-- **Do:** DevTools → Performance, 10 s record while tracking.
-- **Expect:** no per-frame long tasks outside inference; no runaway memory (repo capped at 200 commits).
+- **Do:** sit perfectly still, watch the Δ meter + DevTools → Performance (10 s record).
+- **Expect:** Δ text/bar go quiet (change-detected DOM writes — no per-frame style churn); no per-frame long tasks outside inference; no runaway memory (repo capped at 200 commits, fixed-size filter state).
+- **Do:** mid-merge and mid-detach, try `commit`, `checkout`, `merge`, `stash`, `stash pop`.
+- **Expect:** every mutating command refused with a hint naming the way out (`merge --abort` / `checkout <branch>`); read-only `diff`/`log`/`status` keep working. STOP clears pending merge, detach, overlay, and stash preview safely.
+
+## 9. Polish (stash, graph)
+
+- **Do:** strike a pose → `stash` → move around → `stash list` → `stash pop`.
+- **Expect:** `stashed "stashed pose"`, list shows it with age, pop previews the saved pose on stage (~1.6 s) then live resumes. Second `stash` while occupied → refused; `stash drop` clears; `stash pop` on empty → `nothing stashed`.
+- **Do:** with 2+ branches + a merge, `graph`.
+- **Expect:** all branches newest-first with `[tags]`, `*` on HEAD, `╮+<hash>` on the merge commit. `log` still shows HEAD lineage only.
+- **Do:** read any `log` line.
+- **Expect:** time-ago suffix (`just now`, `12s ago`, `3m ago`).
 
 ## Full 90-second demo script (the pass/fail run)
 
