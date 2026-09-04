@@ -4,7 +4,7 @@
 ### *Version control for humans. Nobody asked for it.*
 
 ## Basic Details
-### Team Name: Obsidian
+### Team Name: TimeToLOQin
 
 ### Team Members
 - Team Lead: Ansil Muhammed N S - KMEA Engineering College 
