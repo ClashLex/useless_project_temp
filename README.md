@@ -105,12 +105,12 @@ flowchart LR
 
 ### Project Demo
 ### Video
-[https://drive.google.com/file/d/1jeXzzhLZS_ZYWnzbw6_j_HV8VokwxVzc/view?usp=drivesdk]
+[Watch Demo Video](https://drive.google.com/file/d/1jeXzzhLZS_ZYWnzbw6_j_HV8VokwxVzc/view?usp=drivesdk)
+
 *Shows: live commits landing, amber time-travel, green/amber merge conflict and resolution*
 
 ### Additional Demos
-[Any extra clips, GIFs, 
-live link - https://clashlex.github.io/useless_project_temp/
+- **Live Link:** [https://clashlex.github.io/useless_project_temp/](https://clashlex.github.io/useless_project_temp/)
 
 
 ---
