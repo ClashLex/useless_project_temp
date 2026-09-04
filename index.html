@@ -1,1 +1,207 @@
-gddv
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#030604" />
+<meta name="color-scheme" content="dark" />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link rel="preconnect" href="https://storage.googleapis.com" crossorigin />
+<title>human.git — version control for humans</title>
+<style>
+  :root {
+    --bg: #030604; --panel: #090e0a; --panel2: #0c130e;
+    --line: rgba(0, 255, 102, .14); --line2: rgba(0, 255, 102, .28);
+    --grn: #00ff66; --grn-dim: #0a5c2a; --txt: #d2f4de; --mut: #6f9180;
+    --warn: #ffbd2e; --err: #ff5c5c;
+    --r: 12px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--txt); font-family: var(--mono);
+    background-image: radial-gradient(1000px 500px at 70% -10%, rgba(0,255,102,.07), transparent 60%); }
+  #app { min-height: 100vh; display: flex; flex-direction: column; }
+
+  /* top bar */
+  #topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    border-bottom: 1px solid var(--line); background: rgba(9,14,10,.85);
+    backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 10; }
+  #logo { font-weight: 800; letter-spacing: .5px; color: var(--grn); }
+  #logo span { color: var(--txt); font-weight: 400; opacity: .7; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12px;
+    border: 1px solid var(--line2); border-radius: 999px; padding: 4px 11px; color: var(--txt); }
+  .badge { border: 1px solid var(--line2); border-radius: 999px; padding: 4px 11px; font-size: 12px; color: var(--grn); }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: #3a4a40; }
+  #dot.ok { background: var(--grn); box-shadow: 0 0 10px var(--grn); }
+  #dot.warn { background: var(--warn); box-shadow: 0 0 10px var(--warn); }
+  #dot.err { background: var(--err); box-shadow: 0 0 10px var(--err); }
+  #recTxt { color: var(--mut); }
+  .spacer { flex: 1; }
+  #commitCount { font-size: 12px; color: var(--mut); }
+  #topActions { display: flex; gap: 8px; }
+
+  button { font: inherit; font-size: 12px; font-weight: 700; letter-spacing: .4px;
+    border-radius: 8px; padding: 8px 14px; cursor: pointer; border: 1px solid transparent; }
+  #startBtn { background: var(--grn); color: #02120a; }
+  #startBtn:hover:not(:disabled) { filter: brightness(1.1); }
+  #stopBtn, #commitBtn { background: transparent; color: var(--grn); border-color: var(--line2); }
+  #stopBtn:hover:not(:disabled), #commitBtn:hover:not(:disabled) { background: rgba(0,255,102,.1); }
+  button:disabled { opacity: .35; cursor: default; }
+
+  /* layout */
+  #layout { display: grid; grid-template-columns: 300px minmax(0,1fr) 360px; gap: 12px;
+    padding: 12px 16px; flex: 1; min-height: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+    padding: 12px; min-width: 0; }
+  .card h3 { margin: 0 0 10px; font-size: 11px; letter-spacing: 1.2px; color: var(--mut); font-weight: 700; }
+  #left, #right { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+
+  #videoWrap { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--line2); }
+  #video { width: 100%; aspect-ratio: 16/9; display: block; background: #000; object-fit: cover;
+    transform: scaleX(-1); }
+  #rec { position: absolute; top: 8px; left: 10px; font-size: 11px; display: flex; gap: 6px;
+    align-items: center; text-shadow: 0 1px 8px #000; }
+  #controls { display: flex; gap: 8px; margin-top: 10px; }
+  #controls button { flex: 1; }
+  #status { white-space: pre-wrap; font-size: 12px; line-height: 1.55; background: #000;
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; min-height: 74px; color: var(--txt); }
+
+  #deltaRow { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 8px; }
+  #deltaVal { color: var(--grn); font-weight: 700; }
+  #deltaBarWrap { position: relative; height: 8px; background: #04170b; border: 1px solid var(--line);
+    border-radius: 99px; overflow: hidden; margin-bottom: 10px; }
+  #deltaBar { height: 100%; width: 0%; background: var(--grn-dim); transition: width .12s linear; }
+  #threshRow { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--mut); margin-bottom: 10px; }
+  #threshRow input { flex: 1; accent-color: var(--grn); }
+  #threshVal { color: var(--txt); min-width: 36px; text-align: right; }
+  #commitBtn { width: 100%; }
+  #tips { font-size: 11px; line-height: 1.65; color: var(--mut); }
+  #tips b { color: var(--txt); }
+
+  /* stage */
+  #stage { position: relative; border-radius: var(--r); overflow: hidden; min-height: 480px;
+    border: 1px solid var(--line2); background: #000; }
+  #c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { position: absolute; top: 10px; left: 10px; right: 10px; display: flex;
+    justify-content: space-between; gap: 8px; pointer-events: none; font-size: 12px; }
+  #hud .term { background: rgba(0,0,0,.72); border: 1px solid var(--line); border-radius: 8px;
+    padding: 6px 11px; color: var(--grn); }
+  #hudRight { color: var(--txt); }
+  #stageHint { position: absolute; bottom: 10px; left: 10px; right: 10px; display: flex;
+    justify-content: space-between; font-size: 11px; color: var(--mut); pointer-events: none; }
+  #stageHint span { background: rgba(0,0,0,.6); padding: 4px 9px; border-radius: 7px; border: 1px solid var(--line); }
+
+  /* repo terminal */
+  #repoCard { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  #log { white-space: pre-wrap; font-size: 12px; line-height: 1.6; background: #000;
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+    min-height: 200px; max-height: 46vh; overflow-y: auto; margin: 0 0 10px; }
+  #log::-webkit-scrollbar, #status::-webkit-scrollbar { width: 8px; }
+  #log::-webkit-scrollbar-thumb, #status::-webkit-scrollbar-thumb { background: var(--grn-dim); border-radius: 8px; }
+  #cmdRow { display: flex; align-items: center; gap: 0; border: 1px solid var(--line2);
+    border-radius: 8px; overflow: hidden; background: #000; }
+  #cmdRow span { padding: 0 4px 0 10px; color: var(--grn); font-size: 13px; }
+  #cmd { flex: 1; background: transparent; color: var(--txt); border: 0; font: inherit;
+    font-size: 12px; padding: 9px 8px; outline: none; min-width: 0; }
+  #quickRow { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  #quickRow button { background: rgba(0,255,102,.07); color: var(--grn); border: 1px solid var(--line);
+    padding: 5px 10px; font-weight: 400; }
+  #quickRow button:hover { background: rgba(0,255,102,.14); }
+
+  #foot { padding: 8px 16px 14px; font-size: 11px; color: var(--mut); display: flex; gap: 14px; }
+
+  @media (max-width: 1180px) {
+    #layout { grid-template-columns: 280px minmax(0,1fr); }
+    #right { grid-column: 1 / -1; }
+    #log { max-height: 240px; }
+  }
+  @media (max-width: 760px) {
+    #layout { grid-template-columns: 1fr; }
+    #stage { min-height: 52vh; order: -1; }
+    #topbar { flex-wrap: wrap; }
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div id="logo">human.git <span>— version control for humans</span></div>
+    <span class="badge" id="branchBadge">⎇ main</span>
+    <span class="pill"><span id="dot"></span><span id="recTxt">idle</span></span>
+    <div class="spacer"></div>
+    <span id="commitCount">0 commits</span>
+    <div id="topActions">
+      <button id="startBtn">START</button>
+      <button id="stopBtn" disabled>STOP</button>
+    </div>
+  </header>
+
+  <div id="layout">
+    <aside id="left">
+      <section class="card">
+        <h3>SOURCE · WEBCAM</h3>
+        <div id="videoWrap"><video id="video" autoplay muted playsinline></video></div>
+        <div id="controls" style="display:none"></div>
+        <div id="status" style="margin-top:10px">idle. click START (serve over localhost/https, allow camera).</div>
+      </section>
+      <section class="card">
+        <h3>MOTION · COMMIT TRIGGER</h3>
+        <div id="deltaRow"><span>Δ score <span id="deltaVal">—</span></span><span>threshold <span id="threshVal">0.18</span></span></div>
+        <div id="deltaBarWrap"><div id="deltaBar"></div></div>
+        <div id="threshRow"><label for="thresh">sensitivity</label><input id="thresh" type="range" min="0.08" max="0.35" step="0.01" value="0.18" /></div>
+        <button id="commitBtn">COMMIT NOW (c)</button>
+      </section>
+      <section class="card" id="tips"><b>Good frame:</b> any stable framing works — standing, sitting, or close-up. Face the camera, frontal light, plain background. Raise RIGHT hand — avatar mirrors it on screen-right.</section>
+    </aside>
+
+    <main id="stage">
+      <canvas id="c"></canvas>
+      <div id="hud"><span class="term" id="hudLeft">$ pose --live</span><span class="term" id="hudRight">no pose</span></div>
+      <div id="stageHint"><span>drag-free · mirror view</span><span id="modeBanner">live — checkout an old hash to time-travel</span></div>
+    </main>
+
+    <aside id="right">
+      <section class="card" id="repoCard">
+        <h3>REPOSITORY · TERMINAL</h3>
+        <div id="log">HUMAN REPOSITORY
+(no commits yet — stand in frame)</div>
+        <div id="cmdRow"><span>$</span><input id="cmd" placeholder='git log · checkout <hash> · diff · merge · help' spellcheck="false" autocomplete="off" /></div>
+        <div id="quickRow">
+          <button data-cmd="log">log</button>
+          <button data-cmd="checkout ">checkout</button>
+          <button data-cmd="diff">diff</button>
+          <button data-cmd="merge ">merge</button>
+          <button data-cmd="status">status</button>
+          <button data-cmd="commit">commit</button>
+          <button data-cmd="clear">clear</button>
+          <button data-cmd="help">help</button>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <footer id="foot"><span>[c] force commit</span><span>checkout &lt;hash&gt; = time-travel</span><span>checkout main = resume</span><span>merge &lt;branch&gt; = reconcile</span><span>all client-side · no backend</span></footer>
+</div>
+<script type="module" src="./src/main.js"></script>
+<script type="module">
+  // quick chips fill the terminal input (keeps main.js as command owner)
+  document.querySelectorAll('#quickRow button').forEach((b) => {
+    b.onclick = () => {
+      const el = document.getElementById('cmd');
+      el.value = b.dataset.cmd === 'commit' ? 'commit -m ""' : b.dataset.cmd;
+      el.focus();
+      if (b.dataset.cmd === 'commit') el.setSelectionRange(11, 11);
+    };
+  });
+</script>
+</body>
+</html>
