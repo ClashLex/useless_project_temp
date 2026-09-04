@@ -4,12 +4,11 @@
 ### *Version control for humans. Nobody asked for it.*
 
 ## Basic Details
-### Team Name: [Your team name]
+### Team Name: Obsidian
 
 ### Team Members
-- Team Lead: [Name] - [College]
-- Member 2: [Name] - [College]
-- Member 3: [Name] - [College]
+- Team Lead: Ansil Muhammed N S - KMEA Engineering College 
+
 
 ### Project Description
 human.git puts your body under Git version control. A webcam tracks your pose in the browser, significant movements become commits, and you run `log`, `checkout`, `diff`, `branch`, and `merge` on yourself — including human merge conflicts. All client-side, no backend.
