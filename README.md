@@ -105,16 +105,13 @@ flowchart LR
 
 ### Project Demo
 ### Video
-[Your demo video link here — 90 seconds: log → checkout time-travel → branch → merge conflict → resolve]
+[https://drive.google.com/file/d/1jeXzzhLZS_ZYWnzbw6_j_HV8VokwxVzc/view?usp=drivesdk]
 *Shows: live commits landing, amber time-travel, green/amber merge conflict and resolution*
 
 ### Additional Demos
 [Any extra clips, GIFs, or live-deployment links]
 
-## Team Contributions
-- [Name 1]: [Specific contributions]
-- [Name 2]: [Specific contributions]
-- [Name 3]: [Specific contributions]
+
 
 ---
 Made with ❤️ at TinkerHub Useless Projects
