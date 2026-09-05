@@ -19,6 +19,7 @@ export function createTracker({ repo, avatar, ui, getPendingMerge, setPendingMer
   let running = false;
   let lastLandmarks = null;
   let lastWorld = null;
+  let lastTracked = false; // live right now (not stale from before tracking loss)
   let lastVideoTime = -1;
   let lastTs = 0;
   let frames = 0;
@@ -43,6 +44,10 @@ export function createTracker({ repo, avatar, ui, getPendingMerge, setPendingMer
   let refreezeFrames = 0;
   let lastCommitTick = 0; // commit pipeline runs at ~10Hz, render stays full-rate
   const torsoEMA = { value: null };
+  // stash preview owns the stage while active: avatar holds the stashed pose
+  // (amber), HUD announces it, and live auto-resumes when the hold expires.
+  let previewUntil = 0;
+  let previewLabel = '';
 
   function setThreshold(val) {
     threshold = val;
@@ -52,6 +57,28 @@ export function createTracker({ repo, avatar, ui, getPendingMerge, setPendingMer
   function requestRefreeze() {
     needRefreeze = true;
     refreezeFrames = 0;
+  }
+
+  // Play a stashed pose on stage: tween there, hold it visibly, then hand the
+  // stage back to live tracking. Returns false when there is nothing to play.
+  // Tick-driven expiry (not setTimeout) so overlapping pops and mode changes
+  // can't strand or double-trigger the resume.
+  function previewScene(scene, label, holdMs = 2200) {
+    if (!scene || !avatar.playTo(scene, 600)) return false;
+    avatar.clearDiff();
+    requestRefreeze(); // don't instant-commit drift when live resumes
+    previewUntil = performance.now() + holdMs;
+    previewLabel = label || 'stash';
+    return true;
+  }
+
+  function cancelPreview() {
+    previewUntil = 0;
+    previewLabel = '';
+  }
+
+  function previewing() {
+    return previewUntil > performance.now();
   }
 
   async function initPose() {
@@ -91,6 +118,8 @@ export function createTracker({ repo, avatar, ui, getPendingMerge, setPendingMer
 
   function stop() {
     running = false;
+    previewUntil = 0;
+    previewLabel = '';
     lastLandmarks = null;
     lastWorld = null;
     commitSmooth = null;
@@ -101,6 +130,7 @@ export function createTracker({ repo, avatar, ui, getPendingMerge, setPendingMer
     torsoEMA.value = null;
     needRefreeze = false;
     stableFrames = 0;
+    lastTracked = false;
     if (setPendingMerge) setPendingMerge(null);
     avatar.clearDiff();
     avatar.resumeLive();
@@ -159,7 +189,11 @@ export function createTracker({ repo, avatar, ui, getPendingMerge, setPendingMer
   }
 
   function forceCommit(msg) {
-    if (!commitSmooth) return;
+    // commitSmooth survives tracking loss — never commit (or stash) a ghost.
+    if (!lastTracked || !commitSmooth) {
+      if (!lastTracked) ui.appendLog('$ no live track — step into frame first');
+      return;
+    }
     if (isDetached(repo)) {
       ui.appendLog(`$ commits frozen @ ${repo.HEAD.hash} — checkout ${repo.HEAD.branch} to resume`);
       return;
@@ -255,6 +289,11 @@ export function createTracker({ repo, avatar, ui, getPendingMerge, setPendingMer
   }
 
   function tick(tracked) {
+    lastTracked = tracked;
+    if (previewUntil && performance.now() >= previewUntil) {
+      cancelPreview();
+      if (running && !isDetached(repo) && avatar.isPlayback()) avatar.resumeLive();
+    }
     const detached = isDetached(repo);
     const tickNow = performance.now();
     if (!detached && tickNow - lastCommitTick >= 100) {
@@ -285,7 +324,15 @@ export function createTracker({ repo, avatar, ui, getPendingMerge, setPendingMer
       const strideTag = detectStride === 2 ? '/2f' : '';
       const pendingMerge = getPendingMerge ? getPendingMerge() : null;
 
-      if (pendingMerge) {
+      if (previewing()) {
+        ui.elements.hudRight.textContent = `◉ stash ${previewLabel} · previewing`;
+        ui.setStatus(
+          'warn',
+          `STASH ${previewLabel} · previewing saved pose (amber) — hands off, live resumes`
+        );
+        ui.elements.recTxt.textContent = 'preview';
+        ui.elements.dot.className = 'warn';
+      } else if (pendingMerge) {
         const rem = pendingMerge.conflicts.filter((c) => !pendingMerge.resolved[c.key]).length;
         ui.elements.hudRight.textContent = `◉ merging ${pendingMerge.target}→${pendingMerge.baseBranch} · ${rem} left`;
         ui.setStatus(
@@ -332,9 +379,13 @@ export function createTracker({ repo, avatar, ui, getPendingMerge, setPendingMer
     forceCommit,
     doCommit,
     requestRefreeze,
+    previewScene,
+    cancelPreview,
+    previewing,
     setThreshold,
     getThreshold: () => threshold,
     isRunning: () => running,
+    isTracked: () => lastTracked && running,
     isReady: () => !!landmarker,
     getLastLandmarks: () => lastLandmarks,
     getLastWorld: () => lastWorld,

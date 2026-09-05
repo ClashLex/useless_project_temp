@@ -26,6 +26,7 @@ export function createCommands(ctx) {
       return;
     }
     ctx.avatar.clearDiff();
+    ctx.tracker.cancelPreview();
     ctx.avatar.resumeLive();
     ctx.tracker.requestRefreeze();
     ctx.ui.renderLog(ctx.repo);
@@ -48,6 +49,7 @@ export function createCommands(ctx) {
       checkoutBranch(ctx.repo, r.commit.branch);
     } else {
       ctx.avatar.clearDiff();
+      ctx.tracker.cancelPreview();
       ctx.avatar.playTo(r.commit.scene, 600);
     }
     ctx.ui.renderLog(ctx.repo);
@@ -61,11 +63,14 @@ export function createCommands(ctx) {
     const mergeLine = pendingMerge
       ? `\n$ merging '${pendingMerge.target}' → ${pendingMerge.baseBranch} — ${pendingMerge.conflicts.filter((c) => !pendingMerge.resolved[c.key]).length} conflict(s) left (keep/take, or merge --abort)`
       : '';
+    const previewLine = ctx.tracker.previewing && ctx.tracker.previewing()
+      ? `\n$ stash preview playing — live resumes`
+      : '';
     ctx.ui.appendLog(
       `$ status: ${isDetached(ctx.repo) ? `detached @ ${ctx.repo.HEAD.hash}` : `on branch ${ctx.repo.HEAD.branch}`} · ` +
         `${n} commit${n === 1 ? '' : 's'}` +
         (head ? ` · HEAD "${head.message}"` : ' · no commits yet') +
-        mergeLine +
+        mergeLine + previewLine +
         (ctx.repo.stash ? `\n$ stash: "${ctx.repo.stash.message}" (${ctx.ui.ago(ctx.repo.stash.timestamp)})` : '')
     );
   }
@@ -79,6 +84,7 @@ export function createCommands(ctx) {
       ctx.ui.appendLog(`$ can't merge while time-traveling — checkout ${ctx.repo.HEAD.branch} first`);
       return;
     }
+    ctx.tracker.cancelPreview(); // conflict overlay takes the stage
     const r = analyzeMerge(ctx.repo, target);
     if (!r.ok) {
       ctx.ui.appendLog('$ ' + r.error);
@@ -271,8 +277,12 @@ export function createCommands(ctx) {
       return;
     }
     const commitSmooth = ctx.tracker.getCommitSmooth();
+    if (!ctx.tracker.isTracked()) {
+      ctx.ui.appendLog('$ nothing to stash — step into frame and hold still');
+      return;
+    }
     if (!commitSmooth) {
-      ctx.ui.appendLog('$ nothing to stash — no tracked pose yet');
+      ctx.ui.appendLog('$ nothing to stash — hold still a moment longer');
       return;
     }
     const scene = ctx.avatar.getScene();
@@ -303,12 +313,9 @@ export function createCommands(ctx) {
       return;
     }
     ctx.ui.appendLog(`$ popped "${r.stash.message}" — previewing, live resumes`);
-    ctx.avatar.playTo(r.stash.scene, 600);
-    setTimeout(() => {
-      if (ctx.tracker.isRunning() && !isDetached(ctx.repo) && !ctx.getPendingMerge() && ctx.avatar.isPlayback()) {
-        ctx.avatar.resumeLive();
-      }
-    }, 1600);
+    if (!ctx.tracker.previewScene(r.stash.scene, `"${r.stash.message}"`)) {
+      ctx.ui.appendLog('$ preview failed to start (no snapshot)');
+    }
   }
 
   function doStashList() {
